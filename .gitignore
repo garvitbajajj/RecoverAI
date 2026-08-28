@@ -1,0 +1,12 @@
+node_modules/
+
+# Secrets. Never commit API keys -- including Razorpay test-mode keys.
+.env
+.env.*
+!.env.example
+
+# Regenerated every run by src/index.js
+data/audit_log.jsonl
+
+npm-debug.log*
+.DS_Store

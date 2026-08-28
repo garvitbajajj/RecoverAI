@@ -44,7 +44,8 @@ const VALID_ACTIONS = new Set(Object.values(ACTION));
  *   attempt_number: number,    // 1-based, the attempt this decision represents
  *   max_attempts: number,      // effective cap (min of policy + global)
  *   auto_retry_allowed: boolean,
- *   guardrail: string|null,    // which guardrail changed the outcome, if any
+ *   guardrail: string|null,      // the BINDING guardrail (drove the outcome)
+ *   guardrails_tripped: string[],// every guardrail that fired, for the audit trail
  *   rationale: string,
  * }}
  */
@@ -75,7 +76,18 @@ function decide(rootCause, context = {}) {
     max_attempts: maxAttempts,
     auto_retry_allowed: !!policy.autoRetry,
     guardrail: null,
+    guardrails_tripped: [],
     rationale: policy.rationale,
+  };
+
+  // Record a guardrail trip. The FIRST one to change the outcome is the
+  // binding one; the rest are still logged so the audit trail shows every
+  // rail that fired, not just whichever happened to bind first.
+  const trip = (name, binding = true) => {
+    if (!decision.guardrails_tripped.includes(name)) {
+      decision.guardrails_tripped.push(name);
+    }
+    if (binding && !decision.guardrail) decision.guardrail = name;
   };
 
   // --- Guardrail 1: hard "never auto-retry" list. Absolute. -------------------
@@ -83,7 +95,7 @@ function decide(rootCause, context = {}) {
     decision.action = ACTION.ESCALATE_HUMAN;
     decision.execute = false;
     decision.notify = false;
-    decision.guardrail = 'NEVER_AUTO_RETRY';
+    trip('NEVER_AUTO_RETRY');
     decision.rationale =
       `SAFETY RAIL: ${effectiveRootCause} may never be auto-retried. ` +
       'Routed to human review / exception list.';
@@ -94,7 +106,9 @@ function decide(rootCause, context = {}) {
   if (policy.notify) {
     if (customerMessagesToday >= GUARDRAILS.MAX_MESSAGES_PER_CUSTOMER_PER_DAY) {
       decision.notify = false;
-      decision.guardrail = 'MESSAGE_CAP';
+      // Suppressing a message does not by itself change the retry outcome,
+      // so this claims the binding slot only if no other rail fires.
+      trip('MESSAGE_CAP', false);
     } else {
       decision.notify = true;
     }
@@ -112,7 +126,7 @@ function decide(rootCause, context = {}) {
   if (attemptNumber > maxAttempts) {
     decision.action = ACTION.ESCALATE_HUMAN;
     decision.execute = false;
-    decision.guardrail = 'MAX_ATTEMPTS';
+    trip('MAX_ATTEMPTS');
     decision.rationale =
       `Attempt cap reached (${attemptCount}/${maxAttempts}). Stopping automated retries; ` +
       'routed to human review / exception list.';
@@ -125,7 +139,7 @@ function decide(rootCause, context = {}) {
   // _OF_BATCH) and is computed by the runner, then passed in here.
   if (retryValueSoFar + amount > retryValueCeiling) {
     decision.execute = false;
-    decision.guardrail = 'RETRY_VALUE_CAP';
+    trip('RETRY_VALUE_CAP');
     decision.rationale =
       `Run retry-value ceiling (${retryValueCeiling} paise) would be exceeded ` +
       `(${retryValueSoFar} already queued + ${amount} this txn). ` +
@@ -143,6 +157,11 @@ function finalise(decision) {
     throw new Error(
       `executor produced an action outside taxonomy.ACTION: "${decision.action}"`
     );
+  }
+  // No outcome-changing rail fired, but something tripped (e.g. message cap
+  // alone) -- surface it rather than reporting "no guardrail".
+  if (!decision.guardrail && decision.guardrails_tripped.length > 0) {
+    [decision.guardrail] = decision.guardrails_tripped;
   }
   return decision;
 }

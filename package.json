@@ -5,7 +5,10 @@
   "main": "src/index.js",
   "scripts": {
     "seed": "node src/data/seed.js",
+    "start": "node src/index.js",
     "run:batch": "node src/index.js",
+    "demo:cap": "node src/index.js --cap-value 5000000",
+    "exceptions": "node src/index.js --exceptions",
     "dev": "node --watch src/index.js"
   },
   "keywords": ["payments", "recovery", "agent", "razorpay"],

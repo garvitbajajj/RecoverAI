@@ -79,11 +79,52 @@ per-guardrail events tracked independently anyway.
 
 ---
 
-## Day 3 — 30 Aug
+## Day 3 + 4 — done early (28 Aug)
 
----
+Dates in the plan were tentative; 3 and 4 are coupled (the audit trail is what
+makes the dispatched actions verifiable) so they were built together.
 
-## Day 4 — 31 Aug
+**Decision: JSONL audit log, not MongoDB.**
+The stack listed Mongo. Dropped it. The audit trail is *evidence* — a reviewer
+cloning the repo can open `data/audit_log.jsonl` and read exactly what the
+agent did and why, with no service to install and no connection to fail. Mongo
+would add a dependency, a failure mode, and a demo that breaks on any machine
+without an instance running. "Stable execution, full audit trail" is literally
+the Build Quality criterion; no criterion rewards using a database. Writer sits
+behind an `open/write/close` interface so swapping to Mongo is one file.
+Traded away: no query layer, so the Day 6 dashboard reads the JSONL directly.
+
+**Obstacle: stopping rules had nothing to stop.**
+Day 2's runner made one pass per transaction, so `maxAttempts` was unreachable
+and the "3 attempts" rail was decorative. Root cause was in the ground truth:
+`would_recover_on_retry` is a single boolean, so attempts 1, 2 and 3 all return
+the same answer — a retry loop was pointless.
+
+Fix: the simulator now also draws WHICH attempt a recovering payment lands on
+(55/25/12% for attempts 1–3, 8% at attempt 4+), hashed deterministically from
+`transaction_id` so it stays reproducible without touching the generator's
+seed. `_truth` reading stays confined to `simulator.js`. This gives the cap
+teeth: 7 txns / Rs 38,698 would only have landed on attempt 4 and the rail
+means we never see that money. The report states that cost explicitly rather
+than quietly missing it.
+
+**Obstacle: the exception list was lying about why payments failed.**
+First run filed 21 transactions under `MESSAGE_CAP`. But a suppressed SMS never
+blocked a recovery — those were customers sitting on a re-auth link, and the
+message cap was incidental. Reason was being taken from "whichever guardrail
+bound" instead of "what actually stopped the money".
+
+Fix: exception reasons now derive from the blocking condition — retries
+exhausted / escalated / awaiting customer / rail-stopped-pre-attempt —
+and `MESSAGE_CAP` is deliberately never a reason. Separately, guardrail trips
+are now counted independently (`guardrails_tripped[]`), fixing the Day 2
+under-count where a message cap hidden behind a value cap went unreported.
+
+**Result:** 37/71 recovered (52.1%), Rs 90,714, 937 audit events. Of what the
+attempt cap leaves reachable: 37/64 = 57.8%.
+
+Also added `.gitignore` + `.env.example` — there was no `.gitignore` at all,
+which was a live risk with an API key landing on Day 5.
 
 ---
 
