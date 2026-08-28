@@ -25,6 +25,11 @@ npm run report    # run + build dashboard.html
 `npm run report` writes a self-contained `dashboard.html` — open it directly
 in a browser. No server, no build step.
 
+**Optional:** copy `.env.example` to `.env` and add a free
+[Google AI Studio](https://aistudio.google.com) key to enable the LLM
+fallback. Without one the agent runs identically and escalates unmapped
+codes instead — see below.
+
 ---
 
 ## Result on the shipped batch
@@ -95,8 +100,28 @@ next to the decision it justified.
 Decline codes are unambiguous. Routing them through a language model would add
 latency, cost and a failure mode in exchange for nothing. The model's job is
 narrow and real: codes the taxonomy doesn't cover. On this batch that's 5
-records out of 180 — and that ratio is the honest argument for using one at
-all.
+records out of 180 — **2.8%** — and that ratio is the honest argument for
+using one at all.
+
+Three things keep that safe:
+
+- **It cannot invent a diagnosis.** Output is constrained to the existing
+  root-cause enum; anything off-list is discarded. It proposes a cause and
+  never picks an action — the executor still decides that, under the same
+  guardrails as every rules-diagnosed transaction.
+- **A circuit breaker.** After 3 consecutive provider failures it opens and
+  every later call short-circuits without touching the network, so a bad key
+  or a rate limit can't become 180 slow timeouts.
+- **The fallback is a correct outcome, not an error path.** No key, a
+  timeout, an off-list answer — the code stays `UNKNOWN` and escalates to a
+  human, which is exactly what the agent does with no LLM at all.
+
+That last point is the important one: **the LLM is pure upside.** It can add
+recoveries; it can never break a run. Verify it yourself:
+
+```bash
+npm start -- --no-llm      # force rules-only; recovery is identical
+```
 
 **Safety rails are absolute, not advisory.**
 `RISK_BLOCKED` and `UNKNOWN` are never auto-retried under any circumstance —
@@ -139,6 +164,8 @@ src/
   lib/audit.js          append-only JSONL trail
   lib/metrics.js        recovery rates, exception list
   lib/report.js         one serialised run report
+  lib/llm.js            LLM fallback + circuit breaker  (unmapped codes only)
+  lib/env.js            12-line .env reader, so there are no dependencies
   dashboard/build.js    generates dashboard.html
   index.js              the loop
 ```
@@ -152,6 +179,7 @@ src/
 | `npm run report` | run + build the dashboard |
 | `npm run demo:cap` | force a low value cap to show the rail engaging |
 | `npm run exceptions` | print the full exception list |
+| `npm start -- --no-llm` | force rules-only, even with a key present |
 
 The batch uses a seeded RNG, so every run reproduces exactly.
 

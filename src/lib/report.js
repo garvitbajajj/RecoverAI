@@ -8,7 +8,7 @@
  * This file must never read `_truth`. It is handed outcomes, not truth.
  */
 
-function buildReport({ m, ceiling, unreachable, batchAtRisk, config }) {
+function buildReport({ m, ceiling, unreachable, batchAtRisk, config, llm }) {
   const reachable = ceiling.count - unreachable.count;
 
   return {
@@ -22,6 +22,11 @@ function buildReport({ m, ceiling, unreachable, batchAtRisk, config }) {
       ceiling_source: config.ceilingSource,
       max_attempts: config.maxAttempts,
     },
+
+    // The LLM's whole footprint in one object: how narrow its job was, and
+    // whether it stayed up. `attempted` should be a tiny fraction of records --
+    // that ratio is the argument for rules-first.
+    llm: llm || null,
 
     result: {
       retries_attempted: m.retries_attempted,

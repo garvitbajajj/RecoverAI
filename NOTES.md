@@ -149,9 +149,37 @@ are gitignored; `npm run report` regenerates all of them.
 
 ---
 
-## Day 5 — LLM layer + circuit breaker
+## LLM layer + circuit breaker — 28 Aug
 
-Blocked: needs `ANTHROPIC_API_KEY` in `.env` (copy `.env.example`).
+**Decision: Gemini free tier, called over raw REST.**
+No Anthropic free tier exists, and the job here is 5 records per batch — any
+free tier is orders of magnitude more headroom than needed. Chose Gemini
+(no credit card, generous limits). Deliberately did NOT install
+`@google/generative-ai` or `dotenv`: Node 22 has native `fetch`, and a
+12-line `.env` reader covers the rest. The repo's zero-install promise is
+worth more than the convenience, and the provider request shape is isolated
+in one function so swapping vendors is a single edit.
+
+**Obstacle: an LLM layer is a new way for the demo to die.**
+A bad key or a rate limit mid-recording would mean 180 slow timeouts, and the
+whole pitch rests on the run completing.
+
+Fix, three parts. (1) Output constrained to the existing root-cause enum —
+off-list answers are discarded, so the model can propose a cause but never
+invent one and never pick an action. (2) Circuit breaker opens after 3
+consecutive provider failures; later calls short-circuit with no network
+call. (3) The fallback is a *correct outcome*, not an error path: unmapped
+codes stay UNKNOWN and escalate to a human, which is exactly what the agent
+did before the LLM existed.
+
+That third point is the design win. **The LLM is pure upside — it can add
+recoveries, it can never break a run.** Verified all three degraded paths:
+no key, `--no-llm`, and a deliberately invalid key. Recovery is identical at
+37/71 in every case; with a bad key the breaker opens after 3 failures and
+short-circuits the remaining 2 calls.
+
+Traded away: not yet verified against a live key — the success path is
+untested until a real key is in `.env`. Every failure path is tested.
 
 ---
 

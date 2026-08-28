@@ -23,7 +23,11 @@ const { simulateRetry, recoverableCeiling, beyondAttemptCap } = require('./lib/s
 const { Metrics } = require('./lib/metrics');
 const { JsonlAuditLog, STAGE } = require('./lib/audit');
 const { buildReport } = require('./lib/report');
-const { GUARDRAILS } = require('./config/taxonomy');
+const { LlmDiagnoser } = require('./lib/llm');
+const { loadEnv } = require('./lib/env');
+const { GUARDRAILS, ROOT_CAUSE } = require('./config/taxonomy');
+
+loadEnv();
 
 const rupees = (paise) =>
   'Rs ' + (paise / 100).toLocaleString('en-IN', { maximumFractionDigits: 2 });
@@ -31,7 +35,7 @@ const pct = (n, d) => (d ? ((n / d) * 100).toFixed(1) : '0.0');
 
 function parseArgs(argv) {
   const rest = argv.slice(2);
-  const out = { batchFile: null, capValue: null, showExceptions: false };
+  const out = { batchFile: null, capValue: null, showExceptions: false, noLlm: false };
 
   for (let i = 0; i < rest.length; i += 1) {
     const a = rest[i];
@@ -45,6 +49,8 @@ function parseArgs(argv) {
       out.capValue = Math.round(v);
     } else if (a === '--exceptions') {
       out.showExceptions = true;
+    } else if (a === '--no-llm') {
+      out.noLlm = true;
     } else if (!a.startsWith('--')) {
       out.batchFile = a;
     } else {
@@ -67,8 +73,14 @@ function loadBatch(batchFile) {
 }
 
 async function run() {
-  const { batchFile, capValue, showExceptions } = parseArgs(process.argv);
+  const { batchFile, capValue, showExceptions, noLlm } = parseArgs(process.argv);
   const { batch, file } = loadBatch(batchFile);
+
+  // Consulted ONLY for codes the taxonomy cannot map. With no key, or with
+  // --no-llm, this reports as disabled and every unmapped code stays UNKNOWN
+  // and escalates -- the same correct outcome the agent produced before the
+  // LLM layer existed.
+  const llm = new LlmDiagnoser({ enabled: !noLlm });
 
   // --- Auto-retry value ceiling for THIS run, computed at run start. ---
   const batchAtRisk = batch.reduce((s, t) => s + (t.amount || 0), 0);
@@ -90,15 +102,34 @@ async function run() {
   console.log(`  batch value at risk        ${rupees(batchAtRisk)}`);
   console.log(`  auto-retry value ceiling   ${rupees(retryValueCeiling)}  (${ceilingSource})`);
   console.log(`  attempt cap                ${GUARDRAILS.MAX_ATTEMPTS_PER_TRANSACTION} per transaction`);
+  console.log(
+    `  llm fallback               ${llm.enabled ? `${llm.stats.provider}/${llm.stats.model} (unmapped codes only)` : `off — ${llm.disabledReason}`}`
+  );
 
   const m = new Metrics();
   const messagesPerCustomer = new Map();
   let retryValueSoFar = 0;
 
   for (const txn of batch) {
-    // ---- Stage 2: diagnose (rules only) ----
+    // ---- Stage 2: diagnose ----
+    // Rules first, always. The LLM is consulted only where the lookup table
+    // genuinely cannot decide, and it can only return a cause already in the
+    // taxonomy -- never an action.
     const diag = classify(txn);
-    const cause = diag.root_cause;
+    let cause = diag.root_cause;
+    let source = diag.source;
+    let reason = diag.reason;
+
+    if (cause === ROOT_CAUSE.UNKNOWN && diag.error_code) {
+      const llmResult = await llm.diagnose(diag.error_code, {
+        method: txn.method,
+        is_subscription: txn.is_subscription,
+      });
+      source = llmResult.source;
+      reason = `${diag.reason} ${llmResult.reason}`;
+      if (llmResult.root_cause) cause = llmResult.root_cause;
+    }
+
     m.seen(txn, cause);
     audit.write({
       stage: STAGE.DIAGNOSE,
@@ -106,8 +137,8 @@ async function run() {
       error_code: diag.error_code,
       root_cause: cause,
       mapped: diag.mapped,
-      source: diag.source,
-      reason: diag.reason,
+      source,
+      reason,
     });
 
     // ---- Stage 3: decide, act, and keep retrying until a stopping rule ----
@@ -248,14 +279,15 @@ async function run() {
       ceilingSource,
       maxAttempts: GUARDRAILS.MAX_ATTEMPTS_PER_TRANSACTION,
     },
+    llm: llm.stats,
   });
   const reportFile = path.join(__dirname, '../data/run_report.json');
   fs.writeFileSync(reportFile, JSON.stringify(runReport, null, 2));
 
-  report({ m, ceiling, unreachable, batchAtRisk, audit, auditFile, showExceptions, reportFile });
+  report({ m, ceiling, unreachable, batchAtRisk, audit, auditFile, showExceptions, reportFile, llm });
 }
 
-function report({ m, ceiling, unreachable, batchAtRisk, audit, auditFile, showExceptions, reportFile }) {
+function report({ m, ceiling, unreachable, batchAtRisk, audit, auditFile, showExceptions, reportFile, llm }) {
   const pad = (s, n) => String(s).padEnd(n);
   const num = (s, n) => String(s).padStart(n);
 
@@ -281,6 +313,24 @@ function report({ m, ceiling, unreachable, batchAtRisk, audit, auditFile, showEx
   if (rails.length === 0) console.log('  (none)');
   else rails.forEach(([g, n]) => console.log(`  ${pad(g, 28)} ${num(n, 4)}`));
   console.log(`  ${pad('stopped at attempt cap', 28)} ${num(m.stoppedAtCap, 4)}`);
+
+  console.log('\n  LLM FALLBACK  (unmapped decline codes only)');
+  console.log('  ' + '-'.repeat(56));
+  const s = llm.stats;
+  if (!s.enabled) {
+    console.log(`  off — ${s.disabled_reason}`);
+    console.log('  unmapped codes stayed UNKNOWN and escalated to a human.');
+  } else {
+    const share = m.records ? ((s.attempted / m.records) * 100).toFixed(1) : '0.0';
+    console.log(`  provider                   ${s.provider}/${s.model}`);
+    console.log(`  consulted                  ${s.attempted} of ${m.records} records (${share}%)`);
+    console.log(`  diagnosed                  ${s.resolved}`);
+    console.log(`  inconclusive               ${s.inconclusive}  (stayed UNKNOWN)`);
+    console.log(`  provider failures          ${s.failed}`);
+    if (s.breaker_open) {
+      console.log(`  circuit breaker            OPEN — ${s.short_circuited} calls short-circuited to UNKNOWN`);
+    }
+  }
 
   console.log('\n  RECOVERY RESULT');
   console.log('  ' + '-'.repeat(56));
