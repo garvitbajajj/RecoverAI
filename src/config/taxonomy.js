@@ -176,7 +176,26 @@ const RECOVERY_POLICY = {
 const GUARDRAILS = {
   MAX_ATTEMPTS_PER_TRANSACTION: 3,
   MAX_MESSAGES_PER_CUSTOMER_PER_DAY: 2,
-  MAX_TOTAL_RETRY_VALUE_PER_RUN: 500000, // paise-safe ceiling per batch
+
+  /**
+   * Ceiling on the total value the agent may queue for automated retry in a
+   * single run, expressed as a FRACTION of the batch's total at-risk value
+   * (the absolute paise figure is computed at run start — see src/index.js).
+   *
+   * Why a value cap exists at all: the failure mode it guards against is a
+   * runaway agent. A bad batch, a regression in the classifier, or a decline
+   * code that suddenly all maps to "retry" could make the agent fire retries
+   * at the merchant's entire failed-payment volume in one pass — turning a
+   * quiet revenue leak into a live gateway incident and a pile of duplicate
+   * debits. A relative ceiling lets the agent chase most of a batch but never
+   * the whole thing without a human deliberately raising the limit. Set it
+   * absolute (a flat paise number) and it either never fires on a small batch
+   * or strangles a large one; set it relative and it scales with exposure.
+   * Overridable per run via `--cap-value <paise>` so the rail can be
+   * demonstrated engaging on demand.
+   */
+  MAX_RETRY_VALUE_FRACTION_OF_BATCH: 0.6,
+
   NEVER_AUTO_RETRY: [ROOT_CAUSE.RISK_BLOCKED, ROOT_CAUSE.UNKNOWN],
 };
 

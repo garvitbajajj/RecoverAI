@@ -43,6 +43,40 @@ now has a genuine, narrow job: diagnose codes the rules cannot.
 
 <!-- checkpoint: end-to-end loop running with ZERO AI -->
 
+**Checkpoint met.** `classifier -> executor -> simulator -> index` runs the
+full 180-record batch with no LLM imported anywhere in the path. `_truth` is
+read in exactly one file (`simulator.js`).
+
+**Obstacle: the retry-value guardrail was a dead rail.**
+`MAX_TOTAL_RETRY_VALUE_PER_RUN` was a flat `500000` paise (Rs 5,000) — a Day-1
+placeholder. Against a Rs 6.25L batch it fired on the 9th retry and dumped the
+other ~94 eligible txns into the exception list as `RETRY_VALUE_CAP`. "Money
+recovered" came out at Rs 2,111 / 1% of the recoverable ceiling — the headline
+number for Track 03, rendered meaningless by one bad constant.
+
+What I tried: bumping it to a big flat number (Rs 5L). That just moves the
+problem — too low on a large batch, never fires on a small one, so it becomes
+decoration and there's nothing to demo.
+
+What I chose: made it **relative** — `MAX_RETRY_VALUE_FRACTION_OF_BATCH: 0.6`.
+The runner sums batch at-risk value at start and derives the absolute paise
+ceiling, logged in the run header. Added `--cap-value <paise>` to override it
+so the rail can be shown engaging live in the pitch video. Rationale comment in
+`taxonomy.js` now states the failure mode it exists for: a runaway agent (bad
+batch / classifier regression) retrying a merchant's entire failed volume in
+one pass, turning a revenue leak into a gateway incident.
+
+Results: default 60% cap -> 103 retries, **53/71 recovered (74.6%), 71.2% of
+recoverable value**. `--cap-value 5000` -> ceiling Rs 50, all 103 retries
+deferred, `RETRY_VALUE_CAP` x103, exception list holds the whole batch.
+
+What I traded away: `byGuardrail` in the report counts only the *binding*
+guardrail per txn — when a message-capped customer's retry is also value-capped,
+the event is attributed to `RETRY_VALUE_CAP`, so `MESSAGE_CAP` reads lower under
+a tight `--cap-value` (13 vs 23). Actual message behaviour is unaffected
+(`messages_sent` is identical). Left it for the Day 4 audit trail, which needs
+per-guardrail events tracked independently anyway.
+
 ---
 
 ## Day 3 — 30 Aug
