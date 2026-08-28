@@ -38,12 +38,15 @@ codes instead — see below.
 
 | | |
 |---|---|
-| **Recovered** | **₹90,714 across 37 transactions** |
+| **Recovered** | **₹1,37,932 across 50 transactions** |
 | Recoverable ceiling | 71 transactions / ₹2,12,456 |
-| Capture rate | 52.1% of recoverable transactions, 42.7% of recoverable value |
-| Of what the attempt cap leaves reachable | 37/64 — **57.8%** |
-| Escalated to a human | 11 |
-| Exceptions, each with a stated reason | 143 |
+| Capture rate | 70.4% of recoverable transactions, 64.9% of recoverable value |
+| Of what the attempt cap leaves reachable | 50/64 — **78.1%** |
+| Escalated to a human | 6 |
+| Exceptions, each with a stated reason | 130 |
+
+Rules alone recover 47. The LLM fallback adds 3 more by diagnosing decline
+codes the taxonomy doesn't cover — measurable upside from 5 model calls.
 
 That ceiling is not a guess. Every synthetic transaction carries a hidden
 `_truth` block deciding whether a retry would genuinely have succeeded. **The
@@ -136,9 +139,11 @@ that. A rail that never costs anything isn't a rail.
 
 **Value cap scales with the batch.**
 Auto-retry value is capped at 60% of the batch's at-risk total, computed at
-run start. The failure mode it prevents is a runaway agent retrying a
-merchant's entire failed volume in one pass, turning a quiet revenue leak into
-a live gateway incident. Force it low to watch it engage:
+run start, and counted once per transaction rather than once per attempt —
+retrying the same ₹5,000 payment three times doesn't put ₹15,000 at risk,
+since only one attempt can succeed. The failure mode it prevents is a runaway
+agent retrying a merchant's entire failed volume in one pass, turning a quiet
+revenue leak into a live gateway incident. Force it low to watch it engage:
 
 ```bash
 npm run demo:cap
@@ -146,7 +151,7 @@ npm run demo:cap
 
 **Everything is auditable.**
 Every diagnosis, decision, guardrail trip, dispatch and retry outcome appends
-to `data/audit_log.jsonl` — one JSON object per line, ~937 events per run.
+to `data/audit_log.jsonl` — one JSON object per line, ~1,080 events per run.
 Plain text, greppable, no service required to read it.
 
 ---

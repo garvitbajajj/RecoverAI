@@ -178,8 +178,45 @@ no key, `--no-llm`, and a deliberately invalid key. Recovery is identical at
 37/71 in every case; with a bad key the breaker opens after 3 failures and
 short-circuits the remaining 2 calls.
 
-Traded away: not yet verified against a live key — the success path is
-untested until a real key is in `.env`. Every failure path is tested.
+**Obstacle: live key, and three separate failures stacked on each other.**
+First real run with a key: 3 provider failures, breaker opened, 0 diagnosed.
+
+1. `gemini-2.5-flash` returns 404 — retired for new accounts. Google's error
+   names the replacement, but my own 160-char error truncation cut the message
+   mid-sentence and hid it. Self-inflicted: raised the limit to 400 chars.
+   A diagnostic that truncates the diagnosis is worse than none.
+2. Full Flash models were returning 503 (free-tier capacity). That's transient
+   and was being counted as a hard failure, tripping the breaker on a spike
+   and throwing away recoveries. Added bounded retry (2 attempts, 400/1200ms
+   backoff) for 429/5xx only; 4xx still fails fast, since it never self-heals.
+3. Defaulted to `gemini-flash-lite-latest` — a `-latest` alias so the default
+   can't rot the way the pinned id did, and Lite because the job is picking
+   one label off a nine-item list, while the full Flash models are the ones
+   that actually run out of free capacity.
+
+**Obstacle: with the LLM finally working, recovery got WORSE — 37 -> 30.**
+Adding a working feature dropped the headline number. `RETRY_VALUE_CAP` trips
+jumped 24 -> 41: the 5 newly-diagnosed records consumed retry budget and
+displaced other transactions past the ceiling.
+
+Root cause was not the LLM. `retryValueSoFar += txn.amount` ran on *every
+attempt*, so a Rs 5,000 payment retried 3 times consumed Rs 15,000 of a cap
+that is defined as a fraction of batch at-risk *value*. Only one attempt can
+ever succeed, so that triple-counted exposure and made a "60%" ceiling behave
+like ~20%. Now counted once, on first attempt; attempt volume is already
+bounded separately by `MAX_ATTEMPTS_PER_TRANSACTION`.
+
+The LLM was never the problem — it surfaced a guardrail bug that had been
+silently suppressing recoveries since the cap was introduced.
+
+**Result:** 50/71 (70.4%), Rs 1,37,932, 78.1% of what the attempt cap leaves
+reachable. Rules alone: 47. The LLM's 5 calls add 3 recoveries — real,
+measured upside. `--cap-value` still forces the value rail on demand
+(79 trips at Rs 50,000), so it stays demonstrable.
+
+Traded away: the value cap no longer binds on this batch at its default 60%.
+That is honest — the batch's eligible retry value genuinely sits under the
+ceiling — and the rail is still provably live via `npm run demo:cap`.
 
 ---
 

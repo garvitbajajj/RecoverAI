@@ -205,7 +205,13 @@ async function run() {
       if (!act.moves_money || !decision.execute) break;
 
       // ---- Execute the retry (only money-movement path) ----
-      retryValueSoFar += txn.amount;
+      // Count this transaction's value against the run ceiling ONCE, on its
+      // first attempt. Retrying the same Rs 5,000 payment three times does not
+      // put Rs 15,000 at risk -- only one attempt can ever succeed. Counting
+      // per-attempt triple-counted exposure and made the 60% ceiling behave
+      // like ~20%. Attempt volume is already bounded separately by
+      // MAX_ATTEMPTS_PER_TRANSACTION; this rail governs value.
+      if (attempts === 0) retryValueSoFar += txn.amount;
       attempts += 1;
       const result = simulateRetry(txn, attempts);
       m.retry(txn, cause, result.recovered);

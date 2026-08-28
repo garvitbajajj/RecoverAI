@@ -39,6 +39,18 @@ const DIAGNOSABLE = Object.values(ROOT_CAUSE).filter((c) => c !== ROOT_CAUSE.UNK
 const MAX_CONSECUTIVE_FAILURES = 3;
 const TIMEOUT_MS = 8000;
 
+/**
+ * Free-tier Flash models are genuinely oversubscribed and return 503 in
+ * bursts. That is transient, so it must not count as a provider failure --
+ * tripping the breaker on a spike would throw away recoveries we could have
+ * had. Retry those; fail fast on 4xx, which will never fix itself.
+ */
+const MAX_RETRIES = 2;
+const RETRYABLE_STATUS = new Set([429, 500, 502, 503, 504]);
+const BACKOFF_MS = [400, 1200];
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
 function buildPrompt(errorCode, ctx) {
   return `You are triaging a failed Indian digital payment for a merchant's recovery system.
 
@@ -77,7 +89,14 @@ async function callGemini({ apiKey, model, prompt }) {
 
   if (!res.ok) {
     const body = await res.text().catch(() => '');
-    throw new Error(`HTTP ${res.status} ${body.slice(0, 160)}`);
+    // Keep enough of the body to be diagnosable. A 160-char cut once hid
+    // Google's "this model is no longer available, use X instead" guidance
+    // mid-sentence and turned a one-line config fix into a hunt.
+    const err = new Error(
+      `HTTP ${res.status} ${body.replace(/\s+/g, ' ').slice(0, 400)}`
+    );
+    err.status = res.status;
+    throw err;
   }
 
   const json = await res.json();
@@ -87,6 +106,26 @@ async function callGemini({ apiKey, model, prompt }) {
   return text;
 }
 
+/**
+ * Retry transient provider trouble before declaring a failure. Bounded and
+ * short: at most two extra attempts, ~1.6s of added latency worst case, on a
+ * path that only ever sees a handful of records.
+ */
+async function callWithRetry(args) {
+  let lastErr;
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt += 1) {
+    try {
+      return await callGemini(args);
+    } catch (err) {
+      lastErr = err;
+      const transient = err.status === undefined || RETRYABLE_STATUS.has(err.status);
+      if (!transient || attempt === MAX_RETRIES) break;
+      await sleep(BACKOFF_MS[attempt]);
+    }
+  }
+  throw lastErr;
+}
+
 class LlmDiagnoser {
   /**
    * @param {object} [opts]
@@ -94,7 +133,12 @@ class LlmDiagnoser {
    */
   constructor(opts = {}) {
     this.apiKey = process.env.GEMINI_API_KEY || '';
-    this.model = process.env.RECOVERAI_MODEL || 'gemini-2.5-flash';
+    // A `-latest` alias, so the default cannot rot: pinned Gemini ids get
+    // retired for new accounts (gemini-2.5-flash already 404s). Flash-Lite
+    // deliberately -- the job is picking one label off a nine-item list, and
+    // the full Flash models are the ones that actually run out of free-tier
+    // capacity and return 503.
+    this.model = process.env.RECOVERAI_MODEL || 'gemini-flash-lite-latest';
     this.provider = 'gemini';
 
     // Disabled is a normal state, not an error: no key means rules-only.
@@ -150,7 +194,7 @@ class LlmDiagnoser {
 
     let raw;
     try {
-      raw = await callGemini({
+      raw = await callWithRetry({
         apiKey: this.apiKey,
         model: this.model,
         prompt: buildPrompt(errorCode, ctx),
