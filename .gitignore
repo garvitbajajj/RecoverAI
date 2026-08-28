@@ -5,6 +5,9 @@ node_modules/
 .env.*
 !.env.example
 
+# Local project context, not part of the submission
+CLAUDE.md
+
 # Regenerated every run — `npm start` then `npm run dashboard`
 data/audit_log.jsonl
 data/run_report.json
