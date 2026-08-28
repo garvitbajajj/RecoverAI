@@ -1,0 +1,14 @@
+{
+  "name": "recoverai",
+  "version": "0.1.0",
+  "description": "Payment failure triage and recovery agent — Razorpay AI Buildathon 2026, Track 03",
+  "main": "src/index.js",
+  "scripts": {
+    "seed": "node src/data/seed.js",
+    "run:batch": "node src/index.js",
+    "dev": "node --watch src/index.js"
+  },
+  "keywords": ["payments", "recovery", "agent", "razorpay"],
+  "license": "MIT",
+  "dependencies": {}
+}
