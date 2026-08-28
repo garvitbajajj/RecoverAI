@@ -5,8 +5,10 @@ node_modules/
 .env.*
 !.env.example
 
-# Regenerated every run by src/index.js
+# Regenerated every run — `npm start` then `npm run dashboard`
 data/audit_log.jsonl
+data/run_report.json
+dashboard.html
 
 npm-debug.log*
 .DS_Store

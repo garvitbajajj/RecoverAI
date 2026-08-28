@@ -22,6 +22,7 @@ const { dispatch } = require('./lib/actions');
 const { simulateRetry, recoverableCeiling, beyondAttemptCap } = require('./lib/simulator');
 const { Metrics } = require('./lib/metrics');
 const { JsonlAuditLog, STAGE } = require('./lib/audit');
+const { buildReport } = require('./lib/report');
 const { GUARDRAILS } = require('./config/taxonomy');
 
 const rupees = (paise) =>
@@ -233,10 +234,28 @@ async function run() {
 
   const ceiling = recoverableCeiling(batch);
   const unreachable = beyondAttemptCap(batch, GUARDRAILS.MAX_ATTEMPTS_PER_TRANSACTION);
-  report({ m, ceiling, unreachable, batchAtRisk, audit, auditFile, showExceptions });
+
+  // One serialised run report. Console, dashboard and any future API all read
+  // this same object, so the numbers cannot disagree between surfaces.
+  const runReport = buildReport({
+    m,
+    ceiling,
+    unreachable,
+    batchAtRisk,
+    config: {
+      source: path.relative(process.cwd(), file),
+      retryValueCeiling,
+      ceilingSource,
+      maxAttempts: GUARDRAILS.MAX_ATTEMPTS_PER_TRANSACTION,
+    },
+  });
+  const reportFile = path.join(__dirname, '../data/run_report.json');
+  fs.writeFileSync(reportFile, JSON.stringify(runReport, null, 2));
+
+  report({ m, ceiling, unreachable, batchAtRisk, audit, auditFile, showExceptions, reportFile });
 }
 
-function report({ m, ceiling, unreachable, batchAtRisk, audit, auditFile, showExceptions }) {
+function report({ m, ceiling, unreachable, batchAtRisk, audit, auditFile, showExceptions, reportFile }) {
   const pad = (s, n) => String(s).padEnd(n);
   const num = (s, n) => String(s).padStart(n);
 
@@ -295,6 +314,7 @@ function report({ m, ceiling, unreachable, batchAtRisk, audit, auditFile, showEx
   );
 
   console.log(`\n  audit trail                ${audit.count} events -> ${path.relative(process.cwd(), auditFile)}`);
+  console.log(`  run report                 ${path.relative(process.cwd(), reportFile)}`);
 
   if (showExceptions) {
     console.log('\n  FULL EXCEPTION LIST');

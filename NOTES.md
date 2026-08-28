@@ -128,7 +128,30 @@ which was a live risk with an API key landing on Day 5.
 
 ---
 
-## Day 5 — 1 Sept
+## Dashboard — done early (28 Aug)
+
+**Decision: generated self-contained HTML, not a React app.**
+Same reasoning as the JSONL-over-Mongo call, applied consistently. The
+dashboard has to survive being opened by someone who just cloned the repo.
+React would need `npm install`, a build step and a dev server — three things
+that can fail on a judge's machine during evaluation. `src/dashboard/build.js`
+reads `data/run_report.json` and inlines it into `dashboard.html`; double-click
+and it works, offline, with no dependencies. Also sidesteps `file://` CORS,
+which would have blocked a `fetch()`-based version regardless.
+
+Traded away: no live updating and no interactivity beyond scrolling. For a
+batch agent whose output is a finished run, that costs nothing.
+
+Added `src/lib/report.js` so the console printer and the dashboard both read
+one serialised report object — the numbers cannot drift between surfaces.
+Generated artifacts (`dashboard.html`, `run_report.json`, `audit_log.jsonl`)
+are gitignored; `npm run report` regenerates all of them.
+
+---
+
+## Day 5 — LLM layer + circuit breaker
+
+Blocked: needs `ANTHROPIC_API_KEY` in `.env` (copy `.env.example`).
 
 ---
 

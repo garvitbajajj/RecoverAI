@@ -9,6 +9,8 @@
     "run:batch": "node src/index.js",
     "demo:cap": "node src/index.js --cap-value 5000000",
     "exceptions": "node src/index.js --exceptions",
+    "dashboard": "node src/dashboard/build.js",
+    "report": "node src/index.js && node src/dashboard/build.js",
     "dev": "node --watch src/index.js"
   },
   "keywords": ["payments", "recovery", "agent", "razorpay"],
