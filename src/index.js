@@ -8,8 +8,12 @@
  *   node src/index.js --cap-value 5000       # force a low retry-value ceiling
  *                                            # (paise) to demo the rail firing
  *   node src/index.js --exceptions           # print the full exception list
+ *   node src/index.js --no-llm               # force rules-only
  *
- * ZERO AI in this path. No LLM is imported or called anywhere in the loop.
+ * Rules first: every mapped decline code is resolved by lookup, with no model
+ * call. The LLM is consulted ONLY for codes the taxonomy cannot map, and can
+ * only return a cause already in the taxonomy -- never an action. With no key,
+ * or with --no-llm, those codes stay UNKNOWN and escalate to a human.
  * The only file that sees the hidden ground truth is src/lib/simulator.js.
  */
 
@@ -95,7 +99,13 @@ async function run() {
   const auditFile = path.join(__dirname, '../data/audit_log.jsonl');
   const audit = new JsonlAuditLog(auditFile).open();
 
-  console.log('\n  RECOVERAI — BATCH RUN  (rules only, zero AI)');
+  // The mode label must reflect what actually ran. It read 'zero AI'
+  // unconditionally until the LLM layer shipped, which made the header lie
+  // on any run with a key present.
+  const mode = llm.enabled
+    ? 'rules first, LLM for unmapped codes only'
+    : 'rules only, zero AI';
+  console.log(`\n  RECOVERAI — BATCH RUN  (${mode})`);
   console.log('  ' + '='.repeat(56));
   console.log(`  source                     ${path.relative(process.cwd(), file)}`);
   console.log(`  records ingested           ${batch.length}`);
