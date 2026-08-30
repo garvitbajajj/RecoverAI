@@ -156,6 +156,28 @@ Plain text, greppable, no service required to read it.
 
 ---
 
+## Tests
+
+```bash
+npm test
+```
+
+Built on `node:test` — no dependencies, no network, no API key. 22 tests
+covering the safety rails at both the decision boundary and the outcome
+boundary: the full batch runs, and the audit trail is checked to prove
+nothing forbidden actually happened.
+
+The suite fails if a risk-blocked or dead-instrument payment is ever
+retried, if any transaction exceeds 3 attempts, if the value cap stops
+clamping, if the circuit breaker stops opening, if the model's output is
+trusted without validation, or if any file outside the scorer reads
+`_truth`.
+
+Verified by mutation: each rail was deliberately broken and the suite
+caught all nine.
+
+---
+
 ## Architecture
 
 Design decisions, the reasoning behind them, and full results:
