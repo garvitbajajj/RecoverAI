@@ -156,6 +156,13 @@ Plain text, greppable, no service required to read it.
 
 ---
 
+## Architecture
+
+Design decisions, the reasoning behind them, and full results:
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+
+---
+
 ## Layout
 
 ```
