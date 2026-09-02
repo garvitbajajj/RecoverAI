@@ -220,6 +220,42 @@ ceiling — and the rail is still provably live via `npm run demo:cap`.
 
 ---
 
+## Tests + clean-clone verification — 31 Aug / 3 Sept
+
+**Obstacle: the safety rails were only ever verified by me reading output.**
+Every claim about the rails rested on runs I had eyeballed. That does not
+survive a refactor and a judge cannot reproduce it.
+
+Fix: 22 tests on `node:test` — no dependencies, no network, no key. Rails are
+asserted at two boundaries: `decide()` as a pure function, and the audit trail
+after a real batch run, because a rail can be correct in the decision function
+and still be bypassed by a wiring bug in the runner.
+
+**Obstacle: a test that cannot fail is decorative.**
+Broke each rail deliberately and re-ran the suite. The first sweep reported
+MISSED on the attempt cap. Two causes: raising the *global* cap changes
+nothing, since `decide()` takes `min(policy, global)` and no per-cause policy
+exceeds 3 — the global cap is a backstop that never binds. And my test read
+its expected value from the config it was testing, so it would have passed at
+any setting including 99. Now asserted literally, with a separate check that
+no per-cause policy exceeds it. Nine mutations, all caught.
+
+Traded away: no coverage of the dashboard or the report formatter. They are
+presentation, and a wrong number there is visible; a broken rail is not.
+
+**Clean-clone verification (3 Sept).** Everything until now had been tested in
+my working directory, which has a `.env`, a seeded batch and generated
+artifacts. A judge clones into an empty folder. That exact path had never been
+run — the single highest-risk unknown in the project.
+
+Cloned fresh from GitHub with no key present and ran the full sequence:
+`npm install` (0 dependencies), `npm run seed` (180 records, 71 ceiling),
+`npm start` (47/71, 66.2%, correctly reporting "rules only, zero AI" and
+degrading to escalation with no key), `npm test` (22/22), `npm run report`
+(self-contained dashboard). All green. No `.env` in the repo.
+
+---
+
 ## Day 6 — 2 Sept
 
 ---
