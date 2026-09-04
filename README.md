@@ -123,7 +123,7 @@ That last point is the important one: **the LLM is pure upside.** It can add
 recoveries; it can never break a run. Verify it yourself:
 
 ```bash
-npm start -- --no-llm      # force rules-only; recovery is identical
+npm run demo:rules         # force rules-only; recovery is identical
 ```
 
 **Safety rails are absolute, not advisory.**
@@ -213,7 +213,7 @@ src/
 | `npm run report` | run + build the dashboard |
 | `npm run demo:cap` | force a low value cap to show the rail engaging |
 | `npm run exceptions` | print the full exception list |
-| `npm start -- --no-llm` | force rules-only, even with a key present |
+| `npm run demo:rules` | force rules-only, even with a key present |
 
 The batch uses a seeded RNG, so every run reproduces exactly.
 

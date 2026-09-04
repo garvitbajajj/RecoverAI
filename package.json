@@ -8,6 +8,7 @@
     "start": "node src/index.js",
     "run:batch": "node src/index.js",
     "demo:cap": "node src/index.js --cap-value 5000000 --no-llm",
+    "demo:rules": "node src/index.js --no-llm",
     "exceptions": "node src/index.js --exceptions",
     "dashboard": "node src/dashboard/build.js",
     "report": "node src/index.js && node src/dashboard/build.js",

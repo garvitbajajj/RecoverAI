@@ -183,7 +183,7 @@ available recoveries. Permanent errors (4xx) fail immediately; they never
 self-heal. All paths verified, recovery identical in each:
 
 ```bash
-npm start -- --no-llm                        # rules only
+npm run demo:rules                           # rules only
 GEMINI_API_KEY=invalid node src/index.js     # breaker opens, run completes
 ```
 
