@@ -133,12 +133,14 @@ class LlmDiagnoser {
    */
   constructor(opts = {}) {
     this.apiKey = process.env.GEMINI_API_KEY || '';
-    // A `-latest` alias, so the default cannot rot: pinned Gemini ids get
-    // retired for new accounts (gemini-2.5-flash already 404s). Flash-Lite
-    // deliberately -- the job is picking one label off a nine-item list, and
-    // the full Flash models are the ones that actually run out of free-tier
-    // capacity and return 503.
-    this.model = process.env.RECOVERAI_MODEL || 'gemini-flash-lite-latest';
+    // Pinned deliberately. The `gemini-flash-lite-latest` alias resolves to a
+    // reasoning model that spends ~7s per call thinking about a nine-item
+    // classification -- 64s for a 180-record batch, versus ~10s here. Pinning
+    // risks the id being retired for new accounts the way gemini-2.5-flash
+    // was, but that degrades safely: a 404 is a permanent error, the breaker
+    // opens, and unmapped codes escalate exactly as they do with no key.
+    // Override with RECOVERAI_MODEL if this id is ever withdrawn.
+    this.model = process.env.RECOVERAI_MODEL || 'gemini-3.1-flash-lite';
     this.provider = 'gemini';
 
     // Disabled is a normal state, not an error: no key means rules-only.
