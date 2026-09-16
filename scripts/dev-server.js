@@ -11,6 +11,7 @@
  * node:http only -- no dependency, consistent with the rest of the project.
  *
  *   npm run dev:web      then open http://localhost:3000
+ *   PORT=3001 npm run dev:web    to use a different port
  */
 
 const http = require('node:http');
@@ -58,7 +59,7 @@ const server = http.createServer(async (req, res) => {
   if (url.pathname === '/' || url.pathname === '/index.html') {
     if (!fs.existsSync(DASHBOARD)) {
       res.statusCode = 404;
-      return res.end('dashboard.html not found — run `npm run report` first.');
+      return res.end('dashboard.html not found -- run `npm run report` first.');
     }
     res.setHeader('content-type', 'text/html; charset=utf-8');
     res.setHeader('cache-control', 'no-store');
@@ -69,7 +70,31 @@ const server = http.createServer(async (req, res) => {
   res.end('not found');
 });
 
+/**
+ * A busy port is the most likely way to meet this script -- usually an earlier
+ * run still holding it. Node's default is an unhandled 'error' event, which
+ * dumps a stack trace that buries the one useful fact. Say it plainly instead.
+ */
+server.on('error', (err) => {
+  if (err.code !== 'EADDRINUSE') throw err;
+  console.error('');
+  console.error(`  Port ${PORT} is already in use — most likely a dev server still running.`);
+  console.error('');
+  console.error('  Use another port:');
+  console.error(`    $env:PORT=3001; npm run dev:web     (PowerShell)`);
+  console.error(`    PORT=3001 npm run dev:web           (bash)`);
+  console.error('');
+  console.error('  Or find and stop what holds it (PowerShell):');
+  console.error(`    Get-NetTCPConnection -LocalPort ${PORT} -State Listen | Select OwningProcess`);
+  console.error(`    Stop-Process -Id <pid> -Force`);
+  console.error('');
+  process.exit(1);
+});
+
 server.listen(PORT, () => {
   const keyed = process.env.GEMINI_API_KEY ? 'with' : 'WITHOUT';
   console.log(`\n  dev server  http://localhost:${PORT}   (${keyed} GEMINI_API_KEY)\n`);
+  if (!fs.existsSync(DASHBOARD)) {
+    console.log('  note: dashboard.html does not exist yet — run `npm run report` first.\n');
+  }
 });
