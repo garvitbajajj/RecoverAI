@@ -1,0 +1,7 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null,
+  "installCommand": "echo skip",
+  "buildCommand": "npm test && npm run seed && node src/index.js && node src/dashboard/build.js && mkdir -p _site && cp dashboard.html _site/index.html",
+  "outputDirectory": "_site"
+}

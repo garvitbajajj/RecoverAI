@@ -23,5 +23,8 @@
     "razorpay"
   ],
   "license": "MIT",
+  "engines": {
+    "node": ">=22"
+  },
   "dependencies": {}
 }
