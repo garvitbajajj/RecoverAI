@@ -72,9 +72,11 @@ const PANEL_JS = `
     + field('messages sent to this customer today', '<input id="p_msgs" type="number" min="0" value="0">', 'feeds the 2/day message cap')
     + field('hypothetical batch ceiling (Rs)', '<input id="p_ceil" type="number" min="0" placeholder="leave blank to skip">', 'blank = value cap not evaluated')
     + '</div></details>'
-    + '<details class="batchctx"><summary>Or paste JSON — one object or an array, same shape as data/failed_transactions.json</summary>'
-    + '<textarea id="p_json" rows="5" placeholder=\\'{"error_code":"U69","amount":250000,"method":"upi"}\\'></textarea>'
-    + '<div class="note">If this is non-empty it takes precedence over the form above. Any <code>_truth</code> block is ignored — the panel never reads it.</div>'
+    + '<details class="batchctx" id="jsonbox"><summary><b>Diagnose a whole batch</b> — paste JSON, one object or an array</summary>'
+    + '<textarea id="p_json" rows="5" placeholder=\\'{[{"error_code":"U69","amount":500000},{"error_code":"CARD_EXPIRED","amount":120000}]}\\'></textarea>'
+    + '<div class="prow"><button id="p_sample" class="btn alt">Load a 4-transaction sample</button>'
+    + '<span class="note">Missing fields get sensible defaults. Any <code>_truth</code> block is ignored — the panel never reads it.</span></div>'
+    + '<div class="note">Non-empty JSON takes precedence over the form above.</div>'
     + '</details>'
     + '<div class="prow"><button id="p_go" class="btn">Diagnose</button>'
     + '<span class="note" id="p_hint"></span></div>';
@@ -186,12 +188,44 @@ const PANEL_JS = `
     return '<div class="result">' + head + body + llm + '</div>';
   }
 
+  /**
+   * Pasted JSON is untrusted input. A reviewer will paste a minimal object,
+   * and a missing created_at made dispatch() throw "Invalid time value" --
+   * killing the whole render with nothing shown. Defaults applied here rather
+   * than in actions.js, so the agent source the panel executes stays untouched.
+   */
+  function normalize(t) {
+    t = t && typeof t === 'object' ? t : {};
+    var when = t.created_at;
+    var valid = when && !isNaN(new Date(when).getTime());
+    return {
+      error_code: typeof t.error_code === 'string' ? t.error_code.trim() : '',
+      amount: Number(t.amount) || 0,
+      method: typeof t.method === 'string' && t.method ? t.method : 'upi',
+      attempt_count: Number(t.attempt_count) || 0,
+      is_subscription: t.is_subscription === true,
+      created_at: valid ? new Date(when).toISOString() : new Date().toISOString(),
+      order_id: t.order_id || 'order_preview',
+      transaction_id: t.transaction_id || 'pay_preview',
+      customer_id: t.customer_id || 'cust_preview'
+    };
+  }
+
   function parsePaste(raw) {
     var v = JSON.parse(raw);
     return Array.isArray(v) ? v : [v];
   }
 
   function run() {
+    try {
+      runInner();
+    } catch (err) {
+      // Anything unanticipated surfaces in the UI instead of blanking it.
+      el('p_out').innerHTML = '<div class="err">Panel error: ' + esc(err.message) + '</div>';
+    }
+  }
+
+  function runInner() {
     var ctx = batchCtx();
     var out = el('p_out');
     var raw = (el('p_json').value || '').trim();
@@ -199,7 +233,7 @@ const PANEL_JS = `
 
     if (raw) {
       try {
-        txns = parsePaste(raw);
+        txns = parsePaste(raw).map(normalize);
       } catch (e) {
         out.innerHTML = '<div class="err">Could not parse that JSON: ' + esc(e.message) + '</div>';
         return;
@@ -221,7 +255,14 @@ const PANEL_JS = `
     }
 
     out.innerHTML = (many ? '<div class="note">' + txns.length + ' transactions. Decisions only — no recovery figures, for the reason above.</div>' : '')
-      + txns.map(function (t, i) { return renderOne(t, ctx, many ? i : null); }).join('');
+      + txns.map(function (t, i) {
+        try {
+          return renderOne(t, ctx, many ? i : null);
+        } catch (err) {
+          return '<div class="result"><div class="ridx">#' + (i + 1) + '</div>'
+            + '<div class="err">Could not evaluate this transaction: ' + esc(err.message) + '</div></div>';
+        }
+      }).join('');
     wireLlmButtons();
   }
 
@@ -269,7 +310,22 @@ const PANEL_JS = `
 
   el('p_go').addEventListener('click', run);
   el('p_code').addEventListener('keydown', function (e) { if (e.key === 'Enter') run(); });
-  el('p_hint').textContent = 'Try U69 (mapped) or ERR_BAL_LOW_RETRY_LATER (unmapped — offers the model).';
+  el('p_hint').innerHTML = 'Try <code>U69</code> (mapped) or <code>ERR_BAL_LOW_RETRY_LATER</code> (unmapped — offers the model). '
+    + 'For several at once, use <a href="#jsonbox" id="p_openjson">Diagnose a whole batch</a>.';
+  el('p_openjson').addEventListener('click', function (e) {
+    e.preventDefault();
+    el('jsonbox').open = true;
+    el('p_json').focus();
+  });
+  el('p_sample').addEventListener('click', function () {
+    el('p_json').value = JSON.stringify([
+      { error_code: 'U69', amount: 500000, method: 'upi' },
+      { error_code: 'CARD_EXPIRED', amount: 120000, method: 'card' },
+      { error_code: 'SUSPECTED_FRAUD', amount: 900000, method: 'card' },
+      { error_code: 'ERR_BAL_LOW_RETRY_LATER', amount: 75000, method: 'upi' }
+    ], null, 2);
+    el('jsonbox').open = true;
+  });
 })();
 `;
 
