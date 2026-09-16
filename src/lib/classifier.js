@@ -4,7 +4,7 @@
  * Decline code -> root cause, by deterministic lookup. No AI.
  *
  * Every mapped code resolves here in microseconds with zero failure modes.
- * Codes ABSENT from DECLINE_CODE_MAP return UNKNOWN on purpose — Day 5 hands
+ * Codes ABSENT from DECLINE_CODE_MAP return UNKNOWN on purpose — the LLM layer takes
  * those (and only those) to the LLM diagnosis layer. Do not "fix" an UNKNOWN
  * by extending the taxonomy; the unmapped codes are deliberate test material.
  *
@@ -42,7 +42,7 @@ function classify(input) {
     mapped: false,
     source: 'rules',
     reason: errorCode
-      ? `Decline code "${errorCode}" is not in the taxonomy. Rules cannot decide — routes to UNKNOWN (LLM fallback on Day 5).`
+      ? `Decline code "${errorCode}" is not in the taxonomy. Rules cannot decide — routes to UNKNOWN, which escalates to a human unless the model layer resolves it.`
       : 'No decline code present. Rules cannot decide — routes to UNKNOWN.',
   };
 }

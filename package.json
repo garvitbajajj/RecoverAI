@@ -11,6 +11,7 @@
     "demo:rules": "node src/index.js --no-llm",
     "exceptions": "node src/index.js --exceptions",
     "dashboard": "node src/dashboard/build.js",
+    "dev:web": "node scripts/dev-server.js",
     "report": "node src/index.js && node src/dashboard/build.js",
     "dev": "node --watch src/index.js",
     "verify:truth": "node scripts/verify-truth-containment.js",
