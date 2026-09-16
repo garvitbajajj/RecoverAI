@@ -13,5 +13,8 @@ data/audit_log.jsonl
 data/run_report.json
 dashboard.html
 
+# GitHub Pages staging dir, built in CI
+_site/
+
 npm-debug.log*
 .DS_Store

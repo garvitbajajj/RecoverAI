@@ -1,0 +1,74 @@
+name: Publish dashboard
+
+# Regenerates the run report and publishes it to GitHub Pages.
+#
+# The dashboard is a build artifact, not a committed file -- generating it here
+# means the published page always matches the code on main, and the repo stays
+# free of generated HTML that could silently drift from the source.
+#
+# Runs with the Gemini key if one is configured as a repository secret, and
+# without it otherwise. That is not a fallback bolted on for CI: unmapped
+# decline codes escalate to a human when no model is available, which is a
+# correct outcome. A missing secret changes the number, never the build.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: # lets you republish by hand from the Actions tab
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Never let two publishes race; queue the newest and let in-flight finish.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # No `npm ci` -- the project has zero dependencies and no lockfile to
+      # install from. Nothing to do here, deliberately.
+
+      - name: Verify safety rails before publishing
+        run: npm test
+
+      - name: Generate batch
+        run: npm run seed
+
+      - name: Run the agent
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: node src/index.js
+
+      - name: Build dashboard
+        run: node src/dashboard/build.js
+
+      - name: Stage site
+        run: |
+          mkdir -p _site
+          cp dashboard.html _site/index.html
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
