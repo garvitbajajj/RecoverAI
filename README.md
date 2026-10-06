@@ -30,6 +30,35 @@ in a browser. No server, no build step.
 fallback. Without one the agent runs identically and escalates unmapped
 codes instead — see below.
 
+### Try it on your own transaction
+
+The dashboard carries a panel where you can paste a failed transaction — a
+decline code is enough — and watch the engine classify it and choose an
+action.
+
+It runs the real thing. `classifier.js`, `executor.js`, `actions.js` and
+`taxonomy.js` touch no Node built-ins, so the dashboard build inlines those
+exact files and the browser executes them. A test asserts the browser bundle
+and Node agree on every mapped decline code and every guardrail path, because
+a panel running a stale copy of the taxonomy would confidently tell you
+something the agent would never do.
+
+It shows a decision, never an outcome: no recovered figure, no "this would
+have worked". A pasted transaction has no hidden ground truth to score
+against, and the number would be worth nothing without it.
+
+Unmapped codes offer a **Diagnose with the model** button, which calls
+`api/diagnose.js` — the one endpoint, holding the key server-side. It caps the
+body, rate-limits per IP, and discards any answer outside the root-cause list.
+With no key it escalates, exactly as the batch run does.
+
+### Deploying it
+
+`vercel.json` builds the site the way CI does — tests, seed, agent run,
+dashboard — and publishes `_site/`. It is static: the only serverless function
+is the diagnosis endpoint. Set `GEMINI_API_KEY` in the Vercel project for
+Production and Preview; the build still succeeds without it.
+
 ---
 
 ## Result on the shipped batch
@@ -162,7 +191,7 @@ Plain text, greppable, no service required to read it.
 npm test
 ```
 
-Built on `node:test` — no dependencies, no network, no API key. 22 tests
+Built on `node:test` — no dependencies, no network, no API key. 28 tests
 covering the safety rails at both the decision boundary and the outcome
 boundary: the full batch runs, and the audit trail is checked to prove
 nothing forbidden actually happened.
@@ -170,8 +199,9 @@ nothing forbidden actually happened.
 The suite fails if a risk-blocked or dead-instrument payment is ever
 retried, if any transaction exceeds 3 attempts, if the value cap stops
 clamping, if the circuit breaker stops opening, if the model's output is
-trusted without validation, or if any file outside the scorer reads
-`_truth`.
+trusted without validation, if any file outside the scorer reads `_truth`, or
+if the rules engine the dashboard panel runs drifts from the one the agent
+runs.
 
 Verified by mutation: each rail was deliberately broken and the suite
 caught all nine.
@@ -200,8 +230,13 @@ src/
   lib/report.js         one serialised run report
   lib/llm.js            LLM fallback + circuit breaker  (unmapped codes only)
   lib/env.js            12-line .env reader, so there are no dependencies
-  dashboard/build.js    generates dashboard.html
+  dashboard/build.js    generates dashboard.html, inlining the rules engine
   index.js              the loop
+api/
+  diagnose.js           the model fallback for the panel, key held server-side
+scripts/
+  dev-server.js         serves the built dashboard and api/ locally
+  verify-truth-containment.js   fails if anything but the scorer reads _truth
 ```
 
 ### Commands
@@ -214,6 +249,8 @@ src/
 | `npm run demo:cap` | force a low value cap to show the rail engaging |
 | `npm run exceptions` | print the full exception list |
 | `npm run demo:rules` | force rules-only, even with a key present |
+| `npm run dev:web` | serve the dashboard and the diagnosis endpoint locally |
+| `npm run verify:truth` | prove nothing outside the scorer reads `_truth` |
 
 The batch uses a seeded RNG, so every run reproduces exactly.
 
